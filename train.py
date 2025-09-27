@@ -247,31 +247,41 @@ class TrainingController:
         return total_reward, episode_length, win
     
     def _train_model(self) -> float:
-        """
-        Train the model on a batch of experiences.
+        if isinstance(self.experience_replay, PrioritizedExperienceReplay):
+            states, actions, rewards, next_states, dones, indices, weights = self.experience_replay.sample(
+                self.config.batch_size
+            )
+        else:
+            states, actions, rewards, next_states, dones = self.experience_replay.sample(
+                self.config.batch_size
+            )
+            weights = np.ones(len(states))
+            indices = None
         
-        Returns:
-            Average training loss
-        """
-        # Sample batch from experience replay
-        states, actions, rewards, next_states, dones = self.experience_replay.sample(
-            self.config.batch_size
-        )
-        
-        # Calculate target Q-values
         target_q_values = self.model.predict(states)
-        next_q_values = self.model.predict_target(next_states)
         
-        # Update target Q-values using Bellman equation
+        if isinstance(self.experience_replay, PrioritizedExperienceReplay):
+            next_q_values = self.model.predict_target(next_states)
+            next_actions = np.argmax(self.model.predict(next_states), axis=1)
+            next_q_values_selected = next_q_values[np.arange(len(next_states)), next_actions]
+        else:
+            next_q_values = self.model.predict_target(next_states)
+            next_q_values_selected = np.max(next_q_values, axis=1)
+        
         for i in range(len(states)):
             if dones[i]:
                 target_q_values[i][actions[i]] = rewards[i]
             else:
-                target_q_values[i][actions[i]] = rewards[i] + 0.95 * np.max(next_q_values[i])
+                target_q_values[i][actions[i]] = rewards[i] + 0.95 * next_q_values_selected[i]
         
-        # Train the model
         history = self.model.train(states, target_q_values, 
                                  batch_size=self.config.batch_size, epochs=1)
+        
+        if isinstance(self.experience_replay, PrioritizedExperienceReplay):
+            td_errors = np.abs(target_q_values[np.arange(len(states)), actions] - 
+                             self.model.predict(states)[np.arange(len(states)), actions])
+            priorities = td_errors + 1e-6
+            self.experience_replay.update_priorities(indices, priorities)
         
         return np.mean(history['loss'])
     
