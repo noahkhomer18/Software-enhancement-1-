@@ -13,7 +13,7 @@ import logging
 
 from config import GameConfig, DEFAULT_MAZE, get_config
 from maze import TreasureMaze, Action
-from models import QNetwork, ExperienceReplay, EpsilonScheduler
+from models import QNetwork, ExperienceReplay, PrioritizedExperienceReplay, EpsilonScheduler
 from visualizer import MazeVisualizer
 
 
@@ -110,8 +110,8 @@ class TrainingController:
             }
         )
         
-        # Create experience replay buffer
-        self.experience_replay = ExperienceReplay(max_size=self.config.max_memory)
+        # Create prioritized experience replay buffer
+        self.experience_replay = PrioritizedExperienceReplay(max_size=self.config.max_memory)
         
         # Create epsilon scheduler
         self.epsilon_scheduler = EpsilonScheduler(
