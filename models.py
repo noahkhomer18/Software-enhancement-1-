@@ -13,38 +13,23 @@ import os
 
 
 class QNetwork:
-    """
-    Deep Q-Network for learning optimal policies in the treasure hunt game.
-    
-    This is the "brain" of our pirate agent. It learns to predict the best
-    action to take in any given situation by estimating the expected future
-    rewards for each possible action.
-    """
-    
     def __init__(self, input_size: int, num_actions: int, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the Q-Network.
-        
-        Args:
-            input_size: Size of the input state (flattened maze)
-            num_actions: Number of possible actions (4 for up/down/left/right)
-            config: Configuration dictionary for model architecture
-        """
         self.input_size = input_size
         self.num_actions = num_actions
         self.config = config or {}
         
-        # Model architecture parameters
         self.hidden_size = self.config.get('hidden_layer_size', 64)
         self.num_hidden_layers = self.config.get('num_hidden_layers', 2)
         self.learning_rate = self.config.get('learning_rate', 0.001)
         self.dropout_rate = self.config.get('dropout_rate', 0.1)
         
-        # Build the model
         self.model = self._build_model()
-        self.target_model = self._build_model()  # Target network for stability
+        self.target_model = self._build_model()
         
-        # Training history
+        self.q_cache = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
+        
         self.training_history = {
             'loss': [],
             'episode_rewards': [],
@@ -83,18 +68,18 @@ class QNetwork:
         return model
     
     def predict(self, state: np.ndarray) -> np.ndarray:
-        """
-        Predict Q-values for all actions given a state.
+        state_key = tuple(state.flatten())
+        if state_key in self.q_cache:
+            self.cache_hits += 1
+            return self.q_cache[state_key]
         
-        Args:
-            state: Current game state
-            
-        Returns:
-            Q-values for each action
-        """
+        self.cache_misses += 1
         if state.ndim == 1:
             state = state.reshape(1, -1)
-        return self.model.predict(state, verbose=0)
+        
+        q_values = self.model.predict(state, verbose=0)
+        self.q_cache[state_key] = q_values
+        return q_values
     
     def predict_target(self, state: np.ndarray) -> np.ndarray:
         """
@@ -181,22 +166,70 @@ class QNetwork:
         return buffer.getvalue()
 
 
-class ExperienceReplay:
-    """
-    Experience replay buffer for storing and sampling training experiences.
+class PrioritizedExperienceReplay:
+    def __init__(self, max_size: int = 10000, alpha: float = 0.6, beta: float = 0.4):
+        self.max_size = max_size
+        self.alpha = alpha
+        self.beta = beta
+        self.buffer = []
+        self.priorities = []
+        self.position = 0
+        self.beta_increment = (1.0 - beta) / 10000
     
-    This helps the AI learn more efficiently by storing past experiences
-    and replaying them in random order, which breaks the correlation
-    between consecutive experiences.
-    """
-    
-    def __init__(self, max_size: int = 10000):
-        """
-        Initialize the experience replay buffer.
+    def add(self, state: np.ndarray, action: int, reward: float, 
+            next_state: np.ndarray, done: bool, priority: float = None):
+        if priority is None:
+            priority = max(self.priorities) if self.priorities else 1.0
         
-        Args:
-            max_size: Maximum number of experiences to store
-        """
+        experience = (state, action, reward, next_state, done)
+        
+        if len(self.buffer) < self.max_size:
+            self.buffer.append(experience)
+            self.priorities.append(priority)
+        else:
+            self.buffer[self.position] = experience
+            self.priorities[self.position] = priority
+        
+        self.position = (self.position + 1) % self.max_size
+    
+    def sample(self, batch_size: int) -> tuple:
+        if len(self.buffer) < batch_size:
+            batch_size = len(self.buffer)
+        
+        priorities = np.array(self.priorities[:len(self.buffer)])
+        probs = priorities ** self.alpha
+        probs /= probs.sum()
+        
+        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
+        batch = [self.buffer[i] for i in indices]
+        
+        states = np.array([e[0] for e in batch])
+        actions = np.array([e[1] for e in batch])
+        rewards = np.array([e[2] for e in batch])
+        next_states = np.array([e[3] for e in batch])
+        dones = np.array([e[4] for e in batch])
+        
+        weights = (len(self.buffer) * probs[indices]) ** (-self.beta)
+        weights /= weights.max()
+        
+        self.beta = min(1.0, self.beta + self.beta_increment)
+        
+        return states, actions, rewards, next_states, dones, indices, weights
+    
+    def update_priorities(self, indices: np.ndarray, priorities: np.ndarray):
+        for idx, priority in zip(indices, priorities):
+            self.priorities[idx] = priority
+    
+    def size(self) -> int:
+        return len(self.buffer)
+    
+    def clear(self):
+        self.buffer.clear()
+        self.priorities.clear()
+        self.position = 0
+
+class ExperienceReplay:
+    def __init__(self, max_size: int = 10000):
         self.max_size = max_size
         self.buffer = []
         self.position = 0
