@@ -182,18 +182,8 @@ class MazeVisualizer:
     
     def plot_training_progress(self, history: Dict[str, List[float]], 
                               save: bool = True) -> plt.Figure:
-        """
-        Plot training progress including loss, rewards, and win rates.
-        
-        Args:
-            history: Training history dictionary
-            save: Whether to save the plot
-            
-        Returns:
-            Matplotlib figure
-        """
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle('Training Progress', fontsize=16, fontweight='bold')
+        fig, axes = plt.subplots(3, 2, figsize=(15, 15))
+        fig.suptitle('Enhanced Training Progress Analytics', fontsize=16, fontweight='bold')
         
         # Plot loss
         if 'loss' in history and history['loss']:
@@ -239,6 +229,31 @@ class MazeVisualizer:
             axes[1, 1].set_ylabel('Epsilon')
             axes[1, 1].set_ylim(0, 1)
             axes[1, 1].grid(True, alpha=0.3)
+        
+        # Plot episode lengths
+        if 'episode_lengths' in history and history['episode_lengths']:
+            lengths = history['episode_lengths']
+            window_size = min(20, len(lengths) // 10)
+            if window_size > 1:
+                smoothed_lengths = np.convolve(lengths, np.ones(window_size)/window_size, mode='valid')
+                axes[2, 0].plot(smoothed_lengths, color='#8E44AD', linewidth=2, label='Smoothed')
+                axes[2, 0].plot(lengths, color='#8E44AD', alpha=0.3, label='Raw')
+                axes[2, 0].legend()
+            else:
+                axes[2, 0].plot(lengths, color='#8E44AD', linewidth=2)
+            axes[2, 0].set_title('Episode Lengths', fontweight='bold')
+            axes[2, 0].set_xlabel('Episode')
+            axes[2, 0].set_ylabel('Steps')
+            axes[2, 0].grid(True, alpha=0.3)
+        
+        # Plot exploration rates
+        if 'exploration_rates' in history and history['exploration_rates']:
+            axes[2, 1].plot(history['exploration_rates'], color='#16A085', linewidth=2)
+            axes[2, 1].set_title('Maze Exploration Rate', fontweight='bold')
+            axes[2, 1].set_xlabel('Episode')
+            axes[2, 1].set_ylabel('Exploration %')
+            axes[2, 1].set_ylim(0, 1)
+            axes[2, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
         
@@ -302,32 +317,25 @@ class MazeVisualizer:
     
     def create_summary_report(self, training_results: Dict[str, Any], 
                             save: bool = True) -> plt.Figure:
-        """
-        Create a comprehensive summary report of the training session.
-        
-        Args:
-            training_results: Dictionary containing training results
-            save: Whether to save the report
-            
-        Returns:
-            Matplotlib figure
-        """
-        fig = plt.figure(figsize=(16, 12))
-        fig.suptitle('Treasure Hunt Training Summary Report', fontsize=20, fontweight='bold')
+        fig = plt.figure(figsize=(18, 14))
+        fig.suptitle('Enhanced Treasure Hunt Training Analytics Report', fontsize=20, fontweight='bold')
         
         # Create a grid layout
         gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
         
-        # Training statistics
+        # Enhanced training statistics
         ax1 = fig.add_subplot(gs[0, :])
         stats_text = f"""
-        Training Statistics:
+        Enhanced Training Analytics:
         • Total Episodes: {training_results.get('total_episodes', 'N/A')}
         • Final Win Rate: {training_results.get('final_win_rate', 'N/A'):.2%}
         • Best Win Rate: {training_results.get('best_win_rate', 'N/A'):.2%}
-        • Training Time: {training_results.get('training_time', 'N/A')}
+        • Training Time: {training_results.get('training_time', 'N/A'):.1f}s
         • Final Epsilon: {training_results.get('final_epsilon', 'N/A'):.3f}
         • Model Architecture: {training_results.get('model_architecture', 'N/A')}
+        • Cache Hit Rate: {training_results.get('cache_hit_rate', 'N/A'):.1%}
+        • Exploration Efficiency: {training_results.get('exploration_rate', 'N/A'):.1%}
+        • Learning Stability: {training_results.get('learning_stability', 'N/A'):.2f}
         """
         ax1.text(0.1, 0.5, stats_text, transform=ax1.transAxes, fontsize=14,
                 verticalalignment='center', bbox=dict(boxstyle='round', 
